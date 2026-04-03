@@ -3,9 +3,39 @@
 `ld-query-sql-gui` 是一個用 Python 製作的 SQL 產生工具。  
 用途是把「原始 SQL」套進 `ManagerSql.sql` 模板，輸出可交付的管理 SQL 檔，並提供 GUI / CLI 兩種操作方式。
 
+## 這個工具在做什麼（摘要）
+
+- 輸入系統號碼、Query Template、SQL 來源與模板檔
+- 將原始 SQL 轉為 `to_clob(...)` 並套入 `ManagerSql.sql`
+- 產出可交付 SQL 檔到 `data/output/`
+- 提供三種 SQL 檢視：原始 SQL、模板渲染後 SQL、日期替換測試 SQL
+- 支援一鍵複製、另存 `.sql`、系統設定保存與啟動路徑管理
+
+## 畫面預覽
+
+### 設定與執行頁
+
+![設定與執行頁](docs/assets/screen-home.png)
+
+### SQL 預覽：原始 SQL
+
+![原始 SQL 預覽](docs/assets/screen-preview-raw.png)
+
+### SQL 預覽：模板渲染後
+
+![模板渲染後預覽](docs/assets/screen-preview-rendered.png)
+
+### SQL 預覽：日期替換
+
+![日期替換預覽](docs/assets/screen-date-replace.png)
+
+### 系統設定頁
+
+![系統設定頁](docs/assets/screen-system-settings.png)
+
 ## 這個工具在做什麼
 
-- 管理 OA Query SQL 產生流程（模板渲染、輸出檔產生、衝突處理）
+- 管理系統 Query SQL 產生流程（模板渲染、輸出檔產生、衝突處理）
 - 提供 SQL 編輯與預覽（原始 / 模板渲染後 / 日期替換測試）
 - 支援語法亮度、複製內容、另存 SQL
 - 支援 `settings.json` 設定保存（含根目錄、Python 路徑、字體大小）
@@ -88,3 +118,41 @@ python -m py_compile ld_query_sql_tool/gui.py
 python -m unittest
 ```
 
+## 畫面錄製（Windows）
+
+目前工具本身不含內建錄影功能，建議使用 Windows 內建錄製：
+
+### 方法 1：Xbox Game Bar（最快）
+
+1. 開啟 GUI 後按 `Win + G`
+2. 在「擷取」面板按錄製（或 `Win + Alt + R`）
+3. 操作你要展示的流程
+4. 再按一次 `Win + Alt + R` 停止
+5. 影片預設在：`影片\擷取`
+
+### 方法 2：Snipping Tool（Windows 11）
+
+1. 開啟「剪取工具」
+2. 切到「錄製」模式
+3. 選取視窗範圍後開始錄製
+4. 結束後另存 `mp4`
+
+### 方法 3：Python 腳本錄製（本專案）
+
+先安裝套件：
+
+```bash
+pip install mss opencv-python numpy
+```
+
+錄製 20 秒全螢幕：
+
+```bash
+python scripts/record_gui.py --seconds 20 --output docs/assets/gui-demo.mp4
+```
+
+錄製指定區域（x=200,y=120,width=1400,height=900）：
+
+```bash
+python scripts/record_gui.py --seconds 20 --x 200 --y 120 --width 1400 --height 900 --output docs/assets/gui-demo.mp4
+```

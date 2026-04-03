@@ -162,6 +162,7 @@ class SqlToolApp:
         self.start_date_var.trace_add("write", lambda *_: self._refresh_date_tab_sql())
         self.end_date_var.trace_add("write", lambda *_: self._refresh_date_tab_sql())
         self._refresh_date_tab_sql()
+        self._start_demo_autoplay_if_enabled()
 
         if self.loaded_settings_error:
             self._append_log(f"設定檔載入失敗: {self.loaded_settings_error}")
@@ -221,7 +222,7 @@ class SqlToolApp:
         form.grid(row=1, column=0, sticky="nsew")
         form.columnconfigure(1, weight=1)
 
-        self._add_entry_row(form, 0, "OA 號碼", self.oa_no_var)
+        self._add_entry_row(form, 0, "系統號碼", self.oa_no_var)
         self._add_entry_row(form, 1, "Query 前綴名稱", self.query_template_var)
         self._add_entry_row(form, 2, "輸出資料夾", self.output_dir_var, [("瀏覽", self._browse_output_dir)])
         self.ui_theme_combobox = self._add_combobox_row(form, 3, "UI 主題", self.ui_theme_var, list(UI_THEMES))
@@ -497,7 +498,7 @@ class SqlToolApp:
     def _validate_required_fields(self, st: AppSettings) -> list[str]:
         missing: list[str] = []
         if not st.oa_no.strip():
-            missing.append("OA 號碼")
+            missing.append("系統號碼")
         if not st.query_template.strip():
             missing.append("Query 前綴名稱")
         if not str(st.sql_source_mode):
@@ -613,6 +614,30 @@ class SqlToolApp:
         if expect_file:
             target = target.parent if target.suffix else target
         return str(target if target.exists() else Path(self.settings_file).parent.resolve())
+
+    def _start_demo_autoplay_if_enabled(self) -> None:
+        if os.environ.get("LDQ_DEMO_AUTO", "").strip() != "1":
+            return
+        self.root.after(800, self._run_demo_autoplay)
+
+    def _run_demo_autoplay(self) -> None:
+        # 自動展示每一頁，方便錄製工具說明影片
+        self.start_date_var.set("2026-04-01")
+        self.end_date_var.set("2026-04-30")
+
+        steps: list[tuple[int, callable]] = [
+            (0, lambda: self.main_notebook.select(0)),      # 設定與執行
+            (1800, lambda: self.main_notebook.select(1)),   # 檢視與輸出
+            (3200, lambda: self.preview_notebook.select(0)),  # 原始 SQL
+            (4800, lambda: self.preview_notebook.select(1)),  # 目標輸出 SQL
+            (6400, lambda: self.preview_notebook.select(2)),  # 日期替換
+            (7600, self._apply_date_replacement),
+            (9800, lambda: self.main_notebook.select(2)),   # 系統設定
+            (11600, lambda: self.main_notebook.select(0)),  # 回到設定與執行
+        ]
+
+        for delay_ms, action in steps:
+            self.root.after(delay_ms, action)
 
     def _apply_ui_font_size(self) -> None:
         raw = self.ui_font_size_var.get().strip()
