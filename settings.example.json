@@ -10,7 +10,7 @@
   "after_sql_file": "data/input/source.sql",
   "after_sql_text": "",
   "content": "查詢內容",
-  "author": "陳OO",
+  "author": "作者名稱",
   "title_file": "data/input/欄位.txt",
   "template_file": "data/templates/ManagerSql.sql",
   "start_date": "2026-04-01",
@@ -18,6 +18,6 @@
   "overwrite_mode": "prompt",
   "open_output_dir": false,
   "root_dir": ".",
-  "python_exe": "C:/DevWorkspace/googletts_package_shorts_venv/Scripts/python.exe",
+  "python_exe": "",
   "ui_font_size": "14"
 }

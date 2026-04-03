@@ -5,3 +5,4 @@ __pycache__/
 logs/
 data/output/*.sql
 docs/assets/*.mp4
+settings.json

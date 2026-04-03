@@ -20,7 +20,7 @@
 - 管理系統 Query SQL 產生流程（模板渲染、輸出檔產生、衝突處理）
 - 提供 SQL 編輯與預覽（原始 / 模板渲染後 / 日期替換測試）
 - 支援語法亮度、複製內容、另存 SQL
-- 支援 `settings.json` 設定保存（含根目錄、Python 路徑、字體大小）
+- 支援 `settings.json`（本機）設定保存（含根目錄、Python 路徑、字體大小）
 - 支援輸出前基本驗證（必填欄位、檔案存在性）
 
 ## 快速開始
@@ -56,6 +56,9 @@ python -m ld_query_sql_tool.cli ^
 
 ## 設定檔（settings.json）
 
+- 版本庫提供 `settings.example.json` 作為範本
+- 執行時請用本機 `settings.json`（已加入 `.gitignore`，不會上傳個人路徑）
+
 重點欄位：
 
 - `root_dir`: 路徑基準目錄（建議 `.`，即專案根目錄）
@@ -76,7 +79,7 @@ python -m ld_query_sql_tool.cli ^
 .
 ├─ gui.py                         # 根目錄 GUI 啟動入口
 ├─ run_ld_query_sql_gui.bat       # Windows 啟動入口
-├─ settings.json                  # 設定檔
+├─ settings.example.json          # 設定檔範本（可複製成 settings.json）
 ├─ ld_query_sql_tool/             # 核心程式
 ├─ data/
 │  ├─ input/
