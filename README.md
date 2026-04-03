@@ -13,25 +13,7 @@
 
 ## 畫面預覽
 
-### 設定與執行頁
-
-![設定與執行頁](docs/assets/screen-home.png)
-
-### SQL 預覽：原始 SQL
-
-![原始 SQL 預覽](docs/assets/screen-preview-raw.png)
-
-### SQL 預覽：模板渲染後
-
-![模板渲染後預覽](docs/assets/screen-preview-rendered.png)
-
-### SQL 預覽：日期替換
-
-![日期替換預覽](docs/assets/screen-date-replace.png)
-
-### 系統設定頁
-
-![系統設定頁](docs/assets/screen-system-settings.png)
+![工具主畫面](docs/assets/screen-main.png)
 
 ## 這個工具在做什麼
 
