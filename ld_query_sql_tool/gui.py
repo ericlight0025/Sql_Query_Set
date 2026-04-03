@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import os
+import subprocess
 import threading
 import tkinter as tk
 from dataclasses import replace
@@ -28,20 +29,64 @@ from ld_query_sql_tool.sql_service import build_output_file_path
 from ld_query_sql_tool.syntax_highlighter import apply_sql_syntax_highlighting
 from ld_query_sql_tool.workflow import execute_generation
 
-APP_BG = "#0B1220"
-SURFACE_BG = "#121C2B"
-SURFACE_ALT_BG = "#182334"
-INPUT_BG = "#0F1724"
-TEXT_COLOR = "#E6EDF3"
-MUTED_TEXT_COLOR = "#93A4B7"
-ACCENT_COLOR = "#3A86C8"
-ACCENT_ACTIVE_COLOR = "#55A4E8"
-ACCENT_SOFT_COLOR = "#182C40"
-BORDER_COLOR = "#2C3A4D"
-LOG_COLOR = "#0E1723"
-TAB_SELECTED_BG = "#1B2A3C"
-TAB_ACTIVE_BG = "#22364E"
 DEFAULT_SQL_THEME_NAME = "Midnight"
+
+# UI 主題設定（可快速切換，低風險）
+UI_THEMES = {
+    "Scandinavian Dark": {
+        "app_bg": "#0E1117",
+        "surface_bg": "#151A23",
+        "surface_alt_bg": "#1D2330",
+        "input_bg": "#0F141C",
+        "text": "#E6EDF3",
+        "muted": "#9AA7B7",
+        "accent": "#4A90E2",
+        "accent_active": "#66A6F0",
+        "accent_soft": "#1C2A3D",
+        "border": "#273043",
+        "log_bg": "#0F1622",
+        "tab_selected": "#1F3556",
+        "tab_active": "#243A5C",
+        "tab_text_selected": "#FFFFFF",
+        "tab_text": "#C7D2DF",
+    },
+    "Neo-Brutal Dark": {
+        "app_bg": "#0D0D0D",
+        "surface_bg": "#141414",
+        "surface_alt_bg": "#1F1F1F",
+        "input_bg": "#0F0F0F",
+        "text": "#F5F5F5",
+        "muted": "#B1B1B1",
+        "accent": "#FF6B00",
+        "accent_active": "#FF8A33",
+        "accent_soft": "#2A1A0A",
+        "border": "#2B2B2B",
+        "log_bg": "#101010",
+        "tab_selected": "#3A240F",
+        "tab_active": "#432A12",
+        "tab_text_selected": "#FFFFFF",
+        "tab_text": "#E6E6E6",
+    },
+    "Modern Studio Dark": {
+        "app_bg": "#0B1220",
+        "surface_bg": "#121C2B",
+        "surface_alt_bg": "#182334",
+        "input_bg": "#0F1724",
+        "text": "#E6EDF3",
+        "muted": "#93A4B7",
+        "accent": "#3A86C8",
+        "accent_active": "#55A4E8",
+        "accent_soft": "#182C40",
+        "border": "#2C3A4D",
+        "log_bg": "#0E1723",
+        "tab_selected": "#1B2A3C",
+        "tab_active": "#22364E",
+        "tab_text_selected": "#FFFFFF",
+        "tab_text": "#D2DCE7",
+    },
+}
+
+DEFAULT_UI_THEME_NAME = "Modern Studio Dark"
 
 OVERWRITE_LABEL_TO_MODE = {
     "詢問": OverwriteMode.PROMPT.value,
@@ -80,12 +125,15 @@ class SqlToolApp:
         self.root.title("SQL 管理工具")
         self.root.geometry("1200x900")
         self.root.minsize(1000, 800)
-        self.root.configure(bg=APP_BG)
         self.is_running = False
 
         self.loaded_settings_error = ""
         settings = self._load_initial_settings()
         self.base_settings = settings
+
+        self.ui_theme_var = tk.StringVar(value=DEFAULT_UI_THEME_NAME)
+        self._theme = UI_THEMES[self.ui_theme_var.get()]
+        self.root.configure(bg=self._theme["app_bg"])
 
         self.oa_no_var = tk.StringVar(value=settings.oa_no)
         self.query_template_var = tk.StringVar(value=settings.query_template)
@@ -101,11 +149,18 @@ class SqlToolApp:
         self.sql_theme_var = tk.StringVar(value=DEFAULT_SQL_THEME_NAME)
         self.overwrite_mode_var = tk.StringVar(value=OVERWRITE_MODE_TO_LABEL.get(str(settings.overwrite_mode), "詢問"))
         self.open_output_dir_var = tk.BooleanVar(value=settings.open_output_dir)
+        self.python_exe_var = tk.StringVar(value=settings.python_exe)
+        self.ui_font_size_var = tk.StringVar(value=settings.ui_font_size or "11")
 
         self._build_style()
         self._build_layout()
         self._initialize_sql_editor(settings)
         self._apply_sql_theme(self.sql_theme_var.get())
+        self._apply_ui_theme(self.ui_theme_var.get())
+        self._apply_ui_font_size()
+        self.start_date_var.trace_add("write", lambda *_: self._refresh_date_tab_sql())
+        self.end_date_var.trace_add("write", lambda *_: self._refresh_date_tab_sql())
+        self._refresh_date_tab_sql()
 
         if self.loaded_settings_error:
             self._append_log(f"設定檔載入失敗: {self.loaded_settings_error}")
@@ -120,24 +175,8 @@ class SqlToolApp:
     def _build_style(self) -> None:
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        style.configure("Root.TFrame", background=APP_BG)
-        style.configure("Surface.TFrame", background=SURFACE_BG)
-        style.configure("Panel.TLabelframe", background=SURFACE_BG, foreground=TEXT_COLOR)
-        style.configure("Panel.TLabelframe.Label", background=APP_BG, foreground=TEXT_COLOR)
-        style.configure("Field.TLabel", background=SURFACE_BG, foreground=TEXT_COLOR)
-        style.configure("Dark.TEntry", fieldbackground=INPUT_BG, foreground=TEXT_COLOR, padding=(8, 6))
-        style.configure("Dark.TCombobox", fieldbackground=INPUT_BG, foreground=TEXT_COLOR, padding=(8, 6))
-        style.map("Dark.TCombobox", fieldbackground=[("readonly", INPUT_BG)], foreground=[("readonly", TEXT_COLOR)])
-        style.configure("Field.TCheckbutton", background=SURFACE_BG, foreground=TEXT_COLOR)
-        style.configure("Primary.TButton", padding=(16, 8), font=("Microsoft JhengHei UI", 11, "bold"), background=ACCENT_COLOR, foreground="white")
-        style.map("Primary.TButton", background=[("active", ACCENT_ACTIVE_COLOR)], foreground=[("active", "white")])
-        style.configure("Secondary.TButton", padding=(10, 6), background=ACCENT_SOFT_COLOR, foreground=TEXT_COLOR)
-        style.map("Secondary.TButton", background=[("active", "#D7E8F0")], foreground=[("active", "black")])
-        style.configure("Hint.TLabel", background=SURFACE_BG, foreground=MUTED_TEXT_COLOR)
-        style.configure("SectionTitle.TLabel", background=SURFACE_BG, foreground=TEXT_COLOR)
-        style.configure("Preview.TNotebook", background=APP_BG, borderwidth=0)
-        style.configure("Preview.TNotebook.Tab", background=SURFACE_ALT_BG, foreground=TEXT_COLOR, padding=(12, 6))
-        style.map("Preview.TNotebook.Tab", background=[("selected", TAB_SELECTED_BG)], foreground=[("selected", TEXT_COLOR)])
+        # 初始樣式先用預設主題，後續由 _apply_ui_theme 重設
+        self._apply_ui_theme(self.ui_theme_var.get())
 
     def _build_layout(self) -> None:
         container = ttk.Frame(self.root, style="Root.TFrame", padding=10)
@@ -145,19 +184,28 @@ class SqlToolApp:
         container.columnconfigure(0, weight=1)
         container.rowconfigure(1, weight=1)
 
-        header = tk.Frame(container, bg=APP_BG)
+        header = tk.Frame(container, bg=self._theme["app_bg"])
         header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        tk.Label(header, text="SQL 組合產生工具", bg=APP_BG, fg=TEXT_COLOR, font=("Microsoft JhengHei UI", 18, "bold")).pack(side="left")
+        tk.Label(
+            header,
+            text="SQL 組合產生工具",
+            bg=self._theme["app_bg"],
+            fg=self._theme["text"],
+            font=("Microsoft JhengHei UI", 18, "bold"),
+        ).pack(side="left")
 
         self.main_notebook = ttk.Notebook(container, style="Preview.TNotebook")
         self.main_notebook.grid(row=1, column=0, sticky="nsew")
 
         input_tab = ttk.Frame(self.main_notebook, style="Root.TFrame", padding=8)
         output_tab = ttk.Frame(self.main_notebook, style="Root.TFrame", padding=8)
+        settings_tab = ttk.Frame(self.main_notebook, style="Root.TFrame", padding=8)
         self.main_notebook.add(input_tab, text="設定與執行")
         self.main_notebook.add(output_tab, text="檢視與輸出")
+        self.main_notebook.add(settings_tab, text="系統設定")
         input_tab.columnconfigure(0, weight=1)
         output_tab.columnconfigure(0, weight=1)
+        settings_tab.columnconfigure(0, weight=1)
         output_tab.rowconfigure(0, weight=3)
         output_tab.rowconfigure(1, weight=1)
 
@@ -175,16 +223,18 @@ class SqlToolApp:
         self._add_entry_row(form, 0, "OA 號碼", self.oa_no_var)
         self._add_entry_row(form, 1, "Query 前綴名稱", self.query_template_var)
         self._add_entry_row(form, 2, "輸出資料夾", self.output_dir_var, [("瀏覽", self._browse_output_dir)])
-        self.sql_source_combobox = self._add_combobox_row(form, 3, "SQL 原始來源", self.sql_source_var, list(SQL_SOURCE_LABEL_TO_MODE))
-        self._add_entry_row(form, 4, "SQL 檔案", self.sql_file_var, [("瀏覽", self._browse_sql_file), ("載入文字至編輯區", self._load_sql_file_into_editor_from_button)])
-        self._add_entry_row(form, 5, "開始日期", self.start_date_var, [("選日曆", lambda: self._open_date_picker(self.start_date_var, "開始")), ("清除", self._clear_start_date)])
-        self._add_entry_row(form, 6, "結束日期", self.end_date_var, [("選日曆", lambda: self._open_date_picker(self.end_date_var, "結束")), ("清除", self._clear_end_date)])
-        self._add_entry_row(form, 7, "開發內容說明", self.content_var)
-        self._add_entry_row(form, 8, "作者", self.author_var)
-        self._add_entry_row(form, 9, "欄位文字檔", self.title_file_var, [("瀏覽", self._browse_title_file)])
-        self._add_entry_row(form, 10, "模板 SQL 檔", self.template_file_var, [("瀏覽", self._browse_template_file)])
-        self.overwrite_mode_combobox = self._add_combobox_row(form, 11, "檔案已存在處理模式", self.overwrite_mode_var, list(OVERWRITE_LABEL_TO_MODE))
-        self._add_checkbox_row(form, 12, "完成後自動開啟輸出資料夾", self.open_output_dir_var)
+        self.ui_theme_combobox = self._add_combobox_row(form, 3, "UI 主題", self.ui_theme_var, list(UI_THEMES))
+        self.ui_theme_combobox.bind("<<ComboboxSelected>>", self._on_ui_theme_selected)
+        self.sql_source_combobox = self._add_combobox_row(form, 4, "SQL 原始來源", self.sql_source_var, list(SQL_SOURCE_LABEL_TO_MODE))
+        self._add_entry_row(form, 5, "SQL 檔案", self.sql_file_var, [("瀏覽", self._browse_sql_file), ("載入文字至編輯區", self._load_sql_file_into_editor_from_button)])
+        self._add_entry_row(form, 6, "開始日期", self.start_date_var, [("選日曆", lambda: self._open_date_picker(self.start_date_var, "開始")), ("清除", self._clear_start_date)])
+        self._add_entry_row(form, 7, "結束日期", self.end_date_var, [("選日曆", lambda: self._open_date_picker(self.end_date_var, "結束")), ("清除", self._clear_end_date)])
+        self._add_entry_row(form, 8, "開發內容說明", self.content_var)
+        self._add_entry_row(form, 9, "作者", self.author_var)
+        self._add_entry_row(form, 10, "欄位文字檔", self.title_file_var, [("瀏覽", self._browse_title_file)])
+        self._add_entry_row(form, 11, "模板 SQL 檔", self.template_file_var, [("瀏覽", self._browse_template_file)])
+        self.overwrite_mode_combobox = self._add_combobox_row(form, 12, "檔案已存在處理模式", self.overwrite_mode_var, list(OVERWRITE_LABEL_TO_MODE))
+        self._add_checkbox_row(form, 13, "完成後自動開啟輸出資料夾", self.open_output_dir_var)
 
         # 輸出 Tab - 預覽區塊
         preview_frame = ttk.LabelFrame(output_tab, text="SQL 文字檢視", style="Panel.TLabelframe", padding=10)
@@ -194,9 +244,11 @@ class SqlToolApp:
 
         self.preview_notebook = ttk.Notebook(preview_frame, style="Preview.TNotebook")
         self.preview_notebook.grid(row=1, column=0, sticky="nsew")
+        self.preview_notebook.bind("<<NotebookTabChanged>>", self._on_preview_tab_changed)
 
         self.raw_sql_text = self._build_preview_tab(self.preview_notebook, "原始 SQL (可編輯)", editable=True)
         self.rendered_sql_text = self._build_preview_tab(self.preview_notebook, "目標輸出 SQL (模板渲染後)")
+        self._build_date_tab(self.preview_notebook)
 
         # 輸出 Tab - Log 區塊
         log_frame = ttk.LabelFrame(output_tab, text="執行紀錄", style="Panel.TLabelframe", padding=10)
@@ -204,9 +256,16 @@ class SqlToolApp:
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
-        self.log_text = tk.Text(log_frame, height=8, bg=LOG_COLOR, fg=TEXT_COLOR, font=("Consolas", 10), borderwidth=0)
+        self.log_text = tk.Text(
+            log_frame,
+            height=8,
+            bg=self._theme["log_bg"],
+            fg=self._theme["text"],
+            font=("Consolas", 10),
+            borderwidth=0,
+        )
         self.log_text.grid(row=0, column=0, sticky="nsew")
-        self.log_text.tag_configure("info", foreground=TEXT_COLOR)
+        self.log_text.tag_configure("info", foreground=self._theme["text"])
         self.log_text.tag_configure("error", foreground="#FF6B6B")
         self.log_text.tag_configure("warning", foreground="#FFD93D")
         self.log_text.configure(state="disabled")
@@ -215,13 +274,46 @@ class SqlToolApp:
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=scrollbar.set)
 
+        # 系統設定 Tab
+        system_frame = ttk.LabelFrame(settings_tab, text="系統設定", style="Panel.TLabelframe", padding=10)
+        system_frame.grid(row=0, column=0, sticky="nsew")
+        system_frame.columnconfigure(1, weight=1)
+        self._add_entry_row(
+            system_frame,
+            0,
+            "Python.exe 位置",
+            self.python_exe_var,
+            [("瀏覽", self._browse_python_exe)],
+        )
+        self._add_entry_row(
+            system_frame,
+            1,
+            "文字大小",
+            self.ui_font_size_var,
+        )
+        ttk.Button(system_frame, text="儲存設定", style="Primary.TButton", command=self._save_system_settings).grid(
+            row=2, column=1, sticky="w", pady=(8, 0)
+        )
+        ttk.Button(system_frame, text="測試 Python.exe", style="Secondary.TButton", command=self._test_python_exe).grid(
+            row=2, column=2, sticky="w", padx=8, pady=(8, 0)
+        )
+
     def _build_preview_tab(self, notebook: ttk.Notebook, title: str, editable: bool = False) -> tk.Text:
         frame = ttk.Frame(notebook, style="Surface.TFrame", padding=6)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
         notebook.add(frame, text=title)
 
-        text_widget = tk.Text(frame, undo=editable, height=15, bg=LOG_COLOR, fg=TEXT_COLOR, font=("Consolas", 11), borderwidth=0, wrap="none")
+        text_widget = tk.Text(
+            frame,
+            undo=editable,
+            height=15,
+            bg=self._theme["log_bg"],
+            fg=self._theme["text"],
+            font=("Consolas", 11),
+            borderwidth=0,
+            wrap="none",
+        )
         text_widget.grid(row=0, column=0, sticky="nsew")
         text_widget._is_editable = editable
         text_widget._is_sql_widget = True
@@ -231,12 +323,65 @@ class SqlToolApp:
         x_scroll = ttk.Scrollbar(frame, orient="horizontal", command=text_widget.xview)
         x_scroll.grid(row=1, column=0, sticky="ew")
         text_widget.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        ttk.Button(
+            frame,
+            text="複製內容",
+            style="Secondary.TButton",
+            command=lambda w=text_widget, t=title: self._copy_sql_text(w, t),
+        ).grid(row=2, column=0, sticky="e", pady=(6, 0))
+        ttk.Button(
+            frame,
+            text="另存 .sql",
+            style="Secondary.TButton",
+            command=lambda w=text_widget, t=title: self._save_sql_text(w, t),
+        ).grid(row=2, column=0, sticky="w", pady=(6, 0))
 
         if editable:
             text_widget.bind("<<Modified>>", self._on_sql_text_modified)
         else:
             text_widget.configure(state="disabled")
         return text_widget
+
+    def _build_date_tab(self, notebook: ttk.Notebook) -> None:
+        frame = ttk.Frame(notebook, style="Surface.TFrame", padding=10)
+        frame.columnconfigure(1, weight=1)
+        notebook.add(frame, text="日期替換")
+        self.date_tab_frame = frame
+
+        ttk.Label(
+            frame,
+            text="直接使用第一頁輸入的開始/結束日期，取代 SQL 內的 startDate / endDate。",
+            style="Hint.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(0, 8))
+        ttk.Button(frame, text="套用日期替換", style="Primary.TButton", command=self._apply_date_replacement).grid(
+            row=1, column=0, sticky="w", padx=10, pady=(6, 0)
+        )
+        ttk.Button(
+            frame,
+            text="另存 .sql",
+            style="Secondary.TButton",
+            command=lambda: self._save_sql_text(self.date_sql_text, "日期替換"),
+        ).grid(row=1, column=1, sticky="w", padx=10, pady=(6, 0))
+        ttk.Button(
+            frame,
+            text="複製內容",
+            style="Secondary.TButton",
+            command=lambda: self._copy_sql_text(self.date_sql_text, "日期替換"),
+        ).grid(row=1, column=2, sticky="e", padx=10, pady=(6, 0))
+        self.date_sql_text = tk.Text(
+            frame,
+            height=18,
+            bg=self._theme["log_bg"],
+            fg=self._theme["text"],
+            font=("Consolas", 11),
+            borderwidth=0,
+            wrap="none",
+        )
+        self.date_sql_text.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=(10, 0))
+        self.date_sql_text._is_sql_widget = True
+        self.date_sql_text._is_editable = False
+        self.date_sql_text.configure(state="disabled")
+        frame.rowconfigure(2, weight=1)
 
     def _add_entry_row(self, parent: ttk.LabelFrame, row: int, label: str, variable: tk.StringVar, actions: list = None) -> None:
         ttk.Label(parent, text=f"{label}:", style="Field.TLabel").grid(row=row, column=0, sticky="w", padx=10, pady=5)
@@ -274,6 +419,10 @@ class SqlToolApp:
         sel = filedialog.askopenfilename(filetypes=[("SQL files", "*.sql"), ("All", "*.*")])
         if sel: self.template_file_var.set(sel)
 
+    def _browse_python_exe(self):
+        sel = filedialog.askopenfilename(filetypes=[("Python", "python.exe"), ("All", "*.*")])
+        if sel: self.python_exe_var.set(sel)
+
     def _initialize_sql_editor(self, settings: AppSettings) -> None:
         initial_text = settings.sql_text if str(settings.sql_source_mode) == SqlSourceMode.INLINE.value else ""
         if initial_text:
@@ -304,26 +453,7 @@ class SqlToolApp:
     def _execute_process(self) -> None:
         if self.is_running: return
         try:
-            mode_enum = SqlSourceMode(SQL_SOURCE_LABEL_TO_MODE.get(self.sql_source_var.get(), "file"))
-            overwrite_enum = OverwriteMode(OVERWRITE_LABEL_TO_MODE.get(self.overwrite_mode_var.get(), "prompt"))
-            
-            raw_t = self._get_text_content(self.raw_sql_text)
-            st = AppSettings(
-                oa_no=self.oa_no_var.get().strip(),
-                query_template=self.query_template_var.get().strip(),
-                output_dir=self.output_dir_var.get().strip(),
-                sql_source_mode=mode_enum,
-                sql_file=self.sql_file_var.get().strip(),
-                sql_text=raw_t if mode_enum.value == 'inline' else "",
-                content=self.content_var.get().strip(),
-                author=self.author_var.get().strip(),
-                title_file=self.title_file_var.get().strip(),
-                template_file=self.template_file_var.get().strip(),
-                start_date=self.start_date_var.get().strip(),
-                end_date=self.end_date_var.get().strip(),
-                overwrite_mode=overwrite_enum,
-                open_output_dir=self.open_output_dir_var.get()
-            )
+            st = self._build_settings_from_ui()
             config = build_config_from_settings(st)
             resolved = self._resolve_overwrite(config)
             if not resolved: return
@@ -334,6 +464,132 @@ class SqlToolApp:
             threading.Thread(target=self._run_bg, args=(resolved, st), daemon=True).start()
         except Exception as e:
             messagebox.showerror("錯誤", f"輸入參數異常:\n{e}")
+
+    def _save_system_settings(self) -> None:
+        try:
+            self._apply_ui_font_size()
+            st = self._build_settings_from_ui()
+            save_settings(st, self.settings_file)
+            # 系統設定另外同步到專案根目錄 settings.json
+            if Path(self.settings_file).resolve() != DEFAULT_SETTINGS_FILE.resolve():
+                save_settings(st, DEFAULT_SETTINGS_FILE)
+            messagebox.showinfo("成功", "系統設定已儲存。")
+        except Exception as e:
+            messagebox.showerror("錯誤", f"儲存設定失敗:\n{e}")
+
+    def _test_python_exe(self) -> None:
+        python_exe = self.python_exe_var.get().strip()
+        if not python_exe:
+            messagebox.showwarning("提醒", "請先輸入 Python.exe 路徑。")
+            return
+        if not Path(python_exe).is_file():
+            messagebox.showerror("錯誤", f"找不到檔案:\n{python_exe}")
+            return
+        try:
+            result = subprocess.run(
+                [python_exe, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            version_text = (result.stdout or result.stderr or "").strip()
+            if result.returncode == 0:
+                self._append_log(f"Python 測試成功: {version_text}")
+                messagebox.showinfo("成功", f"Python 可執行。\n{version_text}")
+            else:
+                messagebox.showerror("錯誤", f"執行失敗 (code={result.returncode})\n{version_text}")
+        except Exception as exc:
+            messagebox.showerror("錯誤", f"測試失敗:\n{exc}")
+
+    def _build_settings_from_ui(self) -> AppSettings:
+        # 統一整理 UI 欄位，避免多處維護
+        mode_enum = SqlSourceMode(SQL_SOURCE_LABEL_TO_MODE.get(self.sql_source_var.get(), "file"))
+        overwrite_enum = OverwriteMode(OVERWRITE_LABEL_TO_MODE.get(self.overwrite_mode_var.get(), "prompt"))
+        raw_t = self._get_text_content(self.raw_sql_text)
+        return AppSettings(
+            oa_no=self.oa_no_var.get().strip(),
+            query_template=self.query_template_var.get().strip(),
+            output_dir=self.output_dir_var.get().strip(),
+            sql_source_mode=mode_enum,
+            sql_file=self.sql_file_var.get().strip(),
+            sql_text=raw_t if mode_enum.value == "inline" else "",
+            content=self.content_var.get().strip(),
+            author=self.author_var.get().strip(),
+            title_file=self.title_file_var.get().strip(),
+            template_file=self.template_file_var.get().strip(),
+            start_date=self.start_date_var.get().strip(),
+            end_date=self.end_date_var.get().strip(),
+            overwrite_mode=overwrite_enum,
+            open_output_dir=self.open_output_dir_var.get(),
+            python_exe=self.python_exe_var.get().strip(),
+            ui_font_size=self.ui_font_size_var.get().strip(),
+        )
+
+    def _apply_ui_font_size(self) -> None:
+        raw = self.ui_font_size_var.get().strip()
+        try:
+            size = max(9, min(16, int(raw)))
+        except ValueError:
+            size = 11
+        self.ui_font_size_var.set(str(size))
+        # 重新套用主題字體大小
+        style = ttk.Style(self.root)
+        style.configure("Field.TLabel", font=("Microsoft JhengHei UI", size))
+        style.configure("Dark.TEntry", font=("Microsoft JhengHei UI", size))
+        style.configure("Dark.TCombobox", font=("Microsoft JhengHei UI", size))
+        style.configure("Field.TCheckbutton", font=("Microsoft JhengHei UI", size))
+        style.configure("Primary.TButton", font=("Microsoft JhengHei UI", size, "bold"))
+        style.configure("Secondary.TButton", font=("Microsoft JhengHei UI", size))
+
+    def _apply_date_replacement(self) -> None:
+        start = self.start_date_var.get().strip()
+        end = self.end_date_var.get().strip()
+        if not start or not end:
+            messagebox.showwarning("提醒", "請先設定開始日期與結束日期。")
+            return
+        raw = self._get_text_content(self.raw_sql_text)
+        replaced, start_hits, end_hits = self._replace_date_tokens(raw)
+        if replaced == raw:
+            messagebox.showinfo("提示", "未找到 startDate / endDate 可替換。")
+            return
+        self._set_text_content(self.date_sql_text, replaced, editable=False)
+        self.main_notebook.select(1)
+        self.preview_notebook.select(self.date_tab_frame)
+        self._append_log(f"已套用日期替換。startDate: {start_hits} 次, endDate: {end_hits} 次")
+
+    def _build_date_replaced_sql(self, raw: str) -> str:
+        replaced, _, _ = self._replace_date_tokens(raw)
+        return replaced
+
+    def _replace_date_tokens(self, raw: str) -> tuple[str, int, int]:
+        start = self.start_date_var.get().strip()
+        end = self.end_date_var.get().strip()
+        replaced = raw
+        start_hits = 0
+        end_hits = 0
+        if start:
+            for token in ("?startDate?", "startDate", ":startDate", "${startDate}"):
+                start_hits += replaced.count(token)
+                replaced = replaced.replace(token, start)
+        if end:
+            for token in ("?endDate?", "endDate", ":endDate", "${endDate}"):
+                end_hits += replaced.count(token)
+                replaced = replaced.replace(token, end)
+        return replaced, start_hits, end_hits
+
+    def _refresh_date_tab_sql(self) -> None:
+        if not hasattr(self, "date_sql_text") or not hasattr(self, "raw_sql_text"):
+            return
+        raw = self._get_text_content(self.raw_sql_text)
+        self._set_text_content(self.date_sql_text, self._build_date_replaced_sql(raw), editable=False)
+
+    def _on_preview_tab_changed(self, _ev) -> None:
+        selected = self.preview_notebook.select()
+        if not selected:
+            return
+        if self.preview_notebook.tab(selected, "text") == "日期替換":
+            self._refresh_date_tab_sql()
 
     def _resolve_overwrite(self, config):
         if config.overwrite_mode.value != "prompt": return config
@@ -389,6 +645,35 @@ class SqlToolApp:
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    def _copy_sql_text(self, widget: tk.Text, tab_name: str) -> None:
+        text = self._get_text_content(widget)
+        if not text.strip():
+            messagebox.showwarning("提醒", "目前沒有可複製的內容。")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self._append_log(f"{tab_name} 內容已複製到剪貼簿。")
+
+    def _save_sql_text(self, widget: tk.Text, tab_name: str) -> None:
+        text = self._get_text_content(widget)
+        if not text.strip():
+            messagebox.showwarning("提醒", "目前沒有可儲存的內容。")
+            return
+        default_name = {
+            "原始 SQL (可編輯)": "raw_sql.sql",
+            "目標輸出 SQL (模板渲染後)": "rendered_sql.sql",
+            "日期替換": "date_replaced_sql.sql",
+        }.get(tab_name, "sql_output.sql")
+        target = filedialog.asksaveasfilename(
+            defaultextension=".sql",
+            filetypes=[("SQL files", "*.sql"), ("All files", "*.*")],
+            initialfile=default_name,
+        )
+        if not target:
+            return
+        Path(target).write_text(text, encoding="utf-8", newline="\n")
+        self._append_log(f"{tab_name} 已另存: {target}")
+
     def _clear_log(self):
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", "end")
@@ -396,10 +681,60 @@ class SqlToolApp:
 
     def _apply_sql_theme(self, tname: str):
         theme = SQL_PREVIEW_THEMES.get(tname, SQL_PREVIEW_THEMES["Midnight"])
-        for w in (self.raw_sql_text, self.rendered_sql_text):
-            w.configure(bg=theme["background"], fg=theme["foreground"], insertbackground=theme["caret"],
-                        selectbackground=theme["selection_background"], selectforeground=theme["selection_foreground"])
+        widgets = [self.raw_sql_text, self.rendered_sql_text]
+        if hasattr(self, "date_sql_text"):
+            widgets.append(self.date_sql_text)
+        for w in widgets:
+            w.configure(
+                bg=theme["background"],
+                fg=theme["foreground"],
+                insertbackground=theme["caret"],
+                selectbackground=theme["selection_background"],
+                selectforeground=theme["selection_foreground"],
+            )
             self._refresh_sql_highlighting(w, theme)
+
+    def _apply_ui_theme(self, tname: str):
+        # 統一套用 UI 主題（只改視覺，不動功能）
+        self._theme = UI_THEMES.get(tname, UI_THEMES[DEFAULT_UI_THEME_NAME])
+        self.root.configure(bg=self._theme["app_bg"])
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        style.configure("Root.TFrame", background=self._theme["app_bg"])
+        style.configure("Surface.TFrame", background=self._theme["surface_bg"])
+        style.configure("Panel.TLabelframe", background=self._theme["surface_bg"], foreground=self._theme["text"])
+        style.configure("Panel.TLabelframe.Label", background=self._theme["app_bg"], foreground=self._theme["text"])
+        style.configure("Field.TLabel", background=self._theme["surface_bg"], foreground=self._theme["text"])
+        style.configure("Dark.TEntry", fieldbackground=self._theme["input_bg"], foreground=self._theme["text"], padding=(8, 6))
+        style.configure("Dark.TCombobox", fieldbackground=self._theme["input_bg"], foreground=self._theme["text"], padding=(8, 6))
+        style.map("Dark.TCombobox", fieldbackground=[("readonly", self._theme["input_bg"])], foreground=[("readonly", self._theme["text"])])
+        style.configure("Field.TCheckbutton", background=self._theme["surface_bg"], foreground=self._theme["text"])
+        style.configure("Primary.TButton", padding=(16, 8), font=("Microsoft JhengHei UI", 11, "bold"), background=self._theme["accent"], foreground="white")
+        style.map("Primary.TButton", background=[("active", self._theme["accent_active"])], foreground=[("active", "white")])
+        style.configure("Secondary.TButton", padding=(10, 6), background=self._theme["accent_soft"], foreground=self._theme["text"])
+        style.map("Secondary.TButton", background=[("active", "#D7E8F0")], foreground=[("active", "black")])
+        style.configure("Hint.TLabel", background=self._theme["surface_bg"], foreground=self._theme["muted"])
+        style.configure("SectionTitle.TLabel", background=self._theme["surface_bg"], foreground=self._theme["text"])
+        style.configure("Preview.TNotebook", background=self._theme["app_bg"], borderwidth=0)
+        style.configure("Preview.TNotebook.Tab", background=self._theme["surface_alt_bg"], foreground=self._theme["tab_text"], padding=(12, 6))
+        style.map(
+            "Preview.TNotebook.Tab",
+            background=[("selected", self._theme["tab_selected"]), ("active", self._theme["tab_active"])],
+            foreground=[("selected", self._theme["tab_text_selected"]), ("active", self._theme["text"])],
+        )
+
+        # 直接更新非 ttk 元件顏色
+        if hasattr(self, "log_text"):
+            self.log_text.configure(bg=self._theme["log_bg"], fg=self._theme["text"])
+        if hasattr(self, "raw_sql_text"):
+            self.raw_sql_text.configure(fg=self._theme["text"])
+        if hasattr(self, "rendered_sql_text"):
+            self.rendered_sql_text.configure(fg=self._theme["text"])
+        if hasattr(self, "date_sql_text"):
+            self.date_sql_text.configure(bg=self._theme["log_bg"], fg=self._theme["text"])
+
+    def _on_ui_theme_selected(self, _ev):
+        self._apply_ui_theme(self.ui_theme_var.get())
 
     def _refresh_sql_highlighting(self, widget: tk.Text, theme: dict = None):
         if getattr(widget, "_is_sql_widget", False):
@@ -411,6 +746,8 @@ class SqlToolApp:
     def _on_sql_text_modified(self, ev):
         if getattr(ev.widget, "edit_modified", lambda: False)():
             self._refresh_sql_highlighting(ev.widget)
+            if ev.widget is self.raw_sql_text:
+                self._refresh_date_tab_sql()
             ev.widget.edit_modified(False)
 
     def _clear_start_date(self): self.start_date_var.set("")
@@ -421,25 +758,25 @@ class SqlToolApp:
         p.title(t)
         p.geometry("250x250")
         p.resizable(False, False)
-        p.configure(bg=APP_BG)
+        p.configure(bg=self._theme["app_bg"])
         p.grab_set()
 
         try: idt = datetime.strptime(v.get().strip(), "%Y-%m-%d").date()
         except: idt = date.today()
 
         state = {"y": idt.year, "m": idt.month}
-        hf = tk.Frame(p, bg=SURFACE_BG)
+        hf = tk.Frame(p, bg=self._theme["surface_bg"])
         hf.pack(fill="x", pady=5)
         
-        tk.Button(hf, text="◀", bg=SURFACE_BG, fg=TEXT_COLOR, command=lambda: nav(-1)).pack(side="left")
-        ml = tk.Label(hf, text="", bg=SURFACE_BG, fg=TEXT_COLOR, font=("Consolas", 12))
+        tk.Button(hf, text="◀", bg=self._theme["surface_bg"], fg=self._theme["text"], command=lambda: nav(-1)).pack(side="left")
+        ml = tk.Label(hf, text="", bg=self._theme["surface_bg"], fg=self._theme["text"], font=("Consolas", 12))
         ml.pack(side="left", expand=True)
-        tk.Button(hf, text="▶", bg=SURFACE_BG, fg=TEXT_COLOR, command=lambda: nav(1)).pack(side="right")
+        tk.Button(hf, text="▶", bg=self._theme["surface_bg"], fg=self._theme["text"], command=lambda: nav(1)).pack(side="right")
 
-        cf = tk.Frame(p, bg=APP_BG)
+        cf = tk.Frame(p, bg=self._theme["app_bg"])
         cf.pack(pady=5)
         for i, wd in enumerate(["一", "二", "三", "四", "五", "六", "日"]):
-            tk.Label(cf, text=wd, bg=APP_BG, fg=MUTED_TEXT_COLOR, width=3).grid(row=0, column=i)
+            tk.Label(cf, text=wd, bg=self._theme["app_bg"], fg=self._theme["muted"], width=3).grid(row=0, column=i)
         
         btns = []
         def nav(d):
@@ -459,7 +796,14 @@ class SqlToolApp:
             fw, dim = calendar.monthrange(state["y"], state["m"])
             r, c = 1, fw
             for d in range(1, dim + 1):
-                b = tk.Button(cf, text=str(d), width=3, bg=SURFACE_BG, fg=TEXT_COLOR, command=lambda dd=d: pick(dd))
+                b = tk.Button(
+                    cf,
+                    text=str(d),
+                    width=3,
+                    bg=self._theme["surface_bg"],
+                    fg=self._theme["text"],
+                    command=lambda dd=d: pick(dd),
+                )
                 b.grid(row=r, column=c, padx=1, pady=1)
                 btns.append(b)
                 c += 1

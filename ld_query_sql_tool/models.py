@@ -135,3 +135,5 @@ class AppSettings:
     end_date: str = ""
     overwrite_mode: OverwriteMode = OverwriteMode.PROMPT
     open_output_dir: bool = False
+    python_exe: str = ""
+    ui_font_size: str = "11"

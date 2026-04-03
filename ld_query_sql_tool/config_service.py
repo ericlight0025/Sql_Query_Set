@@ -31,6 +31,8 @@ STRING_SETTING_FIELDS = (
     "template_file",
     "start_date",
     "end_date",
+    "python_exe",
+    "ui_font_size",
 )
 
 

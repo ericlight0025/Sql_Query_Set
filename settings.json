@@ -4,7 +4,7 @@
   "output_dir": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\output",
   "sql_source_mode": "inline",
   "sql_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\source.sql",
-  "sql_text": "select 1 from dual;\n",
+  "sql_text": "SELECT\n    to_clob('L01') ||\n    'L02' ||\n    'L03' ||\n    'L04' ||\n    'L05' ||\n    'L06' ||\n    'L07' ||\n    'L08' ||\n    'L09' ||\n    'L10' ||\n    to_clob('L11') ||\n    'L12' ||\n    'L13' ||\n    'L14' ||\n    'L15' ||\n    'L16' ||\n    'L17' ||\n    'L18' ||\n    'L19' ||\n    'L20' ||\n    to_clob('L21') ||\n    'L22' ||\n    'L23' ||\n    'L24' ||\n    'L25' ||\n    'L26' ||\n    'L27' ||\n    'L28' AS demo_text\nFROM dual\nwhere date1 between '?startDate?' and '?endDate?'\n;\n",
   "before_sql_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\source.sql",
   "before_sql_text": "",
   "after_sql_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\source.sql",
@@ -16,5 +16,7 @@
   "start_date": "2026-04-01",
   "end_date": "2026-04-30",
   "overwrite_mode": "prompt",
-  "open_output_dir": false
+  "open_output_dir": false,
+  "python_exe": "C:/DevWorkspace/googletts_package_shorts_venv/Scripts/python.exe",
+  "ui_font_size": "14"
 }
