@@ -49,7 +49,7 @@ class TestLdQuerySqlService(unittest.TestCase):
 
             self.assertTrue(result.output_file.exists())
             self.assertEqual(result.title, "欄位一||欄位二")
-            self.assertIn("1141202337-00", output_text)
+            self.assertIn("1151234567-00", output_text)
             self.assertIn("to_clob('select ''ABC'' as code from dual;\r\n')", output_text)
             self.assertIn("查詢內容-(陳OO)", output_text)
             self.assertIn("欄位一||欄位二", output_text)
@@ -65,13 +65,13 @@ class TestLdQuerySqlService(unittest.TestCase):
     def test_generate_sql_file_auto_renames_existing_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = self._build_config(Path(temp_dir), overwrite_mode="rename")
-            expected_output = config.output_dir / "001-ph-LDNCS2WKARDQUERY_Update.sql"
+            expected_output = config.output_dir / "001-ph-LDOOOO_Update.sql"
             config.output_dir.mkdir(parents=True, exist_ok=True)
             expected_output.write_text("old", encoding="utf-8", newline="")
 
             result = generate_sql_file(config)
 
-            self.assertEqual(result.output_file.name, "001-ph-LDNCS2WKARDQUERY_Update_1.sql")
+            self.assertEqual(result.output_file.name, "001-ph-LDOOOO_Update_1.sql")
             self.assertTrue(result.output_file.exists())
 
     def test_generate_sql_file_rejects_missing_template_placeholder(self) -> None:
@@ -85,7 +85,7 @@ class TestLdQuerySqlService(unittest.TestCase):
         self,
         base_dir: Path,
         *,
-        query_template: str = "001-ph-LDNCS2WKARDQUERY_Update",
+        query_template: str = "001-ph-LDOOOO_Update",
         overwrite_mode: str = "error",
         template_text: str = VALID_TEMPLATE_TEXT,
     ) -> SqlGenerationConfig:
@@ -99,7 +99,7 @@ class TestLdQuerySqlService(unittest.TestCase):
         template_file.write_text(template_text, encoding="utf-8", newline="")
 
         return SqlGenerationConfig(
-            oa_no="1141202337-00",
+            oa_no="1151234567-00",
             query_template=query_template,
             output_dir=output_dir,
             sql_file=sql_file,
@@ -113,3 +113,5 @@ class TestLdQuerySqlService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+

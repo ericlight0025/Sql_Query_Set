@@ -117,8 +117,8 @@ class WorkflowResult:
 class AppSettings:
     """保留 update 舊欄位，同時補 before/after，方便 GUI 漸進式升級。"""
 
-    oa_no: str = "1141202337-00"
-    query_template: str = "001-ph-LDNCS2WKARDQUERY_Update"
+    oa_no: str = "1151234567-00"
+    query_template: str = "001-ph-LDOOOO_Update"
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     sql_source_mode: SqlSourceMode = SqlSourceMode.FILE
     sql_file: str = str(DEFAULT_SQL_FILE)
@@ -135,5 +135,7 @@ class AppSettings:
     end_date: str = ""
     overwrite_mode: OverwriteMode = OverwriteMode.PROMPT
     open_output_dir: bool = False
+    root_dir: str = "."
     python_exe: str = ""
     ui_font_size: str = "11"
+

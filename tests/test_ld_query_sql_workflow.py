@@ -34,7 +34,7 @@ class TestLdQuerySqlWorkflow(unittest.TestCase):
     def test_load_settings_returns_defaults_when_file_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = load_settings(Path(temp_dir) / "missing.json")
-            self.assertEqual(settings.oa_no, "1141202337-00")
+            self.assertEqual(settings.oa_no, "1151234567-00")
             self.assertEqual(settings.overwrite_mode, "prompt")
             self.assertEqual(settings.output_dir, str(DEFAULT_OUTPUT_DIR))
             self.assertEqual(settings.sql_file, str(DEFAULT_SQL_FILE))
@@ -394,3 +394,4 @@ class TestLdQuerySqlWorkflow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

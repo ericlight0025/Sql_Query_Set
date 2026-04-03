@@ -196,8 +196,8 @@ ld_query_sql_tool/
 
 ```json
 {
-  "oa_no": "1141202337-00",
-  "query_template": "001-ph-LDNCS2WKARDQUERY_Update",
+  "oa_no": "1151234567-00",
+  "query_template": "001-ph-LDOOOO_Update",
   "output_dir": "C:/path/output",
   "sql_source_mode": "file",
   "sql_file": "C:/path/input.sql",
@@ -494,3 +494,5 @@ CLI 規則：
 - 使用者可直接在畫面預覽原始 SQL 與輸出結果
 - 日期與 SQL 來源模式可被設定、保存與重用
 - 系統具備基本測試覆蓋與 log 追查能力
+
+

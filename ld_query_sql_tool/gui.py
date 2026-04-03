@@ -149,6 +149,7 @@ class SqlToolApp:
         self.sql_theme_var = tk.StringVar(value=DEFAULT_SQL_THEME_NAME)
         self.overwrite_mode_var = tk.StringVar(value=OVERWRITE_MODE_TO_LABEL.get(str(settings.overwrite_mode), "詢問"))
         self.open_output_dir_var = tk.BooleanVar(value=settings.open_output_dir)
+        self.root_dir_var = tk.StringVar(value=settings.root_dir or ".")
         self.python_exe_var = tk.StringVar(value=settings.python_exe)
         self.ui_font_size_var = tk.StringVar(value=settings.ui_font_size or "11")
 
@@ -281,21 +282,28 @@ class SqlToolApp:
         self._add_entry_row(
             system_frame,
             0,
+            "根目錄",
+            self.root_dir_var,
+            [("瀏覽", self._browse_root_dir)],
+        )
+        self._add_entry_row(
+            system_frame,
+            1,
             "Python.exe 位置",
             self.python_exe_var,
             [("瀏覽", self._browse_python_exe)],
         )
         self._add_entry_row(
             system_frame,
-            1,
+            2,
             "文字大小",
             self.ui_font_size_var,
         )
         ttk.Button(system_frame, text="儲存設定", style="Primary.TButton", command=self._save_system_settings).grid(
-            row=2, column=1, sticky="w", pady=(8, 0)
+            row=3, column=1, sticky="w", pady=(8, 0)
         )
         ttk.Button(system_frame, text="測試 Python.exe", style="Secondary.TButton", command=self._test_python_exe).grid(
-            row=2, column=2, sticky="w", padx=8, pady=(8, 0)
+            row=3, column=2, sticky="w", padx=8, pady=(8, 0)
         )
 
     def _build_preview_tab(self, notebook: ttk.Notebook, title: str, editable: bool = False) -> tk.Text:
@@ -420,8 +428,24 @@ class SqlToolApp:
         if sel: self.template_file_var.set(sel)
 
     def _browse_python_exe(self):
-        sel = filedialog.askopenfilename(filetypes=[("Python", "python.exe"), ("All", "*.*")])
+        initial = self._resolve_dialog_initial_dir(self.python_exe_var.get().strip(), expect_file=True)
+        sel = filedialog.askopenfilename(
+            initialdir=initial,
+            filetypes=[("Python", "python.exe"), ("All", "*.*")],
+        )
         if sel: self.python_exe_var.set(sel)
+
+    def _browse_root_dir(self):
+        initial = self._resolve_dialog_initial_dir(self.root_dir_var.get().strip(), expect_file=False)
+        sel = filedialog.askdirectory(initialdir=initial, mustexist=True)
+        if sel:
+            settings_root = Path(self.settings_file).parent.resolve()
+            selected = Path(sel).resolve()
+            try:
+                rel = selected.relative_to(settings_root).as_posix()
+                self.root_dir_var.set(rel if rel else ".")
+            except Exception:
+                self.root_dir_var.set(str(selected))
 
     def _initialize_sql_editor(self, settings: AppSettings) -> None:
         initial_text = settings.sql_text if str(settings.sql_source_mode) == SqlSourceMode.INLINE.value else ""
@@ -454,6 +478,11 @@ class SqlToolApp:
         if self.is_running: return
         try:
             st = self._build_settings_from_ui()
+            missing = self._validate_required_fields(st)
+            if missing:
+                self._append_log(f"已取消執行：缺少必填欄位 -> {', '.join(missing)}")
+                messagebox.showwarning("提醒", f"以下欄位為必填:\n{chr(10).join(missing)}")
+                return
             config = build_config_from_settings(st)
             resolved = self._resolve_overwrite(config)
             if not resolved: return
@@ -464,6 +493,37 @@ class SqlToolApp:
             threading.Thread(target=self._run_bg, args=(resolved, st), daemon=True).start()
         except Exception as e:
             messagebox.showerror("錯誤", f"輸入參數異常:\n{e}")
+
+    def _validate_required_fields(self, st: AppSettings) -> list[str]:
+        missing: list[str] = []
+        if not st.oa_no.strip():
+            missing.append("OA 號碼")
+        if not st.query_template.strip():
+            missing.append("Query 前綴名稱")
+        if not str(st.sql_source_mode):
+            missing.append("SQL 原始來源")
+        if str(st.sql_source_mode) == SqlSourceMode.FILE.value and not st.sql_file.strip():
+            missing.append("SQL 檔案")
+        if str(st.sql_source_mode) == SqlSourceMode.INLINE.value and not st.sql_text.strip():
+            missing.append("原始 SQL 內容")
+        if not st.template_file.strip():
+            missing.append("模板 SQL 檔")
+        if not st.title_file.strip():
+            missing.append("欄位文字檔")
+
+        if str(st.sql_source_mode) == SqlSourceMode.FILE.value and st.sql_file.strip():
+            sql_path = self._resolve_with_root(st.sql_file.strip(), st.root_dir)
+            if not sql_path.is_file():
+                missing.append(f"SQL 檔案不存在: {sql_path}")
+        if st.template_file.strip():
+            template_path = self._resolve_with_root(st.template_file.strip(), st.root_dir)
+            if not template_path.is_file():
+                missing.append(f"模板 SQL 檔不存在: {template_path}")
+        if st.title_file.strip():
+            title_path = self._resolve_with_root(st.title_file.strip(), st.root_dir)
+            if not title_path.is_file():
+                missing.append(f"欄位文字檔不存在: {title_path}")
+        return missing
 
     def _save_system_settings(self) -> None:
         try:
@@ -478,7 +538,8 @@ class SqlToolApp:
             messagebox.showerror("錯誤", f"儲存設定失敗:\n{e}")
 
     def _test_python_exe(self) -> None:
-        python_exe = self.python_exe_var.get().strip()
+        python_exe = self._normalize_python_exe(self.python_exe_var.get().strip())
+        self.python_exe_var.set(python_exe)
         if not python_exe:
             messagebox.showwarning("提醒", "請先輸入 Python.exe 路徑。")
             return
@@ -522,9 +583,36 @@ class SqlToolApp:
             end_date=self.end_date_var.get().strip(),
             overwrite_mode=overwrite_enum,
             open_output_dir=self.open_output_dir_var.get(),
-            python_exe=self.python_exe_var.get().strip(),
+            root_dir=self.root_dir_var.get().strip() or ".",
+            python_exe=self._normalize_python_exe(self.python_exe_var.get().strip()),
             ui_font_size=self.ui_font_size_var.get().strip(),
         )
+
+    def _normalize_python_exe(self, path_text: str) -> str:
+        value = path_text.strip()
+        if not value:
+            return value
+        p = Path(value)
+        if p.is_dir():
+            return str(p / "python.exe")
+        return value
+
+    def _resolve_with_root(self, path_text: str, root_dir: str) -> Path:
+        p = Path(path_text)
+        if p.is_absolute():
+            return p
+        base = Path(root_dir or ".")
+        if not base.is_absolute():
+            base = Path(DEFAULT_SETTINGS_FILE).parent / base
+        return base / p
+
+    def _resolve_dialog_initial_dir(self, value: str, *, expect_file: bool) -> str:
+        if not value:
+            return str(Path(self.settings_file).parent.resolve())
+        target = self._resolve_with_root(value, self.root_dir_var.get().strip() or ".")
+        if expect_file:
+            target = target.parent if target.suffix else target
+        return str(target if target.exists() else Path(self.settings_file).parent.resolve())
 
     def _apply_ui_font_size(self) -> None:
         raw = self.ui_font_size_var.get().strip()
@@ -640,8 +728,9 @@ class SqlToolApp:
 
     def _append_log(self, text: str):
         tag = "error" if "失敗" in text or "異常" in text else "warning" if "成功" in text else "info"
+        ts = datetime.now().strftime("%H:%M:%S")
         self.log_text.configure(state="normal")
-        self.log_text.insert("end", f"{text}\n", tag)
+        self.log_text.insert("end", f"[{ts}] {text}\n", tag)
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 

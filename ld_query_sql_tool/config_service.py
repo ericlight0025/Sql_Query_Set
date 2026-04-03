@@ -9,6 +9,7 @@ from .models import (
     DateRange,
     DEFAULT_SETTINGS_FILE,
     OverwriteMode,
+    PROJECT_ROOT,
     SqlGenerationConfig,
     SqlSourceMode,
 )
@@ -31,9 +32,33 @@ STRING_SETTING_FIELDS = (
     "template_file",
     "start_date",
     "end_date",
+    "root_dir",
     "python_exe",
     "ui_font_size",
 )
+PATH_SETTING_FIELDS = (
+    "output_dir",
+    "sql_file",
+    "before_sql_file",
+    "after_sql_file",
+    "title_file",
+    "template_file",
+)
+
+
+def _resolve_project_path(path_text: str, project_root: Path = PROJECT_ROOT) -> Path:
+    path = Path(path_text)
+    return path if path.is_absolute() else project_root / path
+
+
+def _to_project_relative_path(path_text: str, project_root: Path) -> str:
+    path = Path(path_text)
+    if not path.is_absolute():
+        return path.as_posix()
+    try:
+        return path.resolve().relative_to(project_root.resolve()).as_posix()
+    except Exception:
+        return str(path)
 
 
 def normalize_sql_source_mode(value: object, default: SqlSourceMode = SqlSourceMode.FILE) -> SqlSourceMode:
@@ -87,9 +112,16 @@ def load_settings(settings_file: Path = DEFAULT_SETTINGS_FILE) -> AppSettings:
 def save_settings(settings: AppSettings, settings_file: Path = DEFAULT_SETTINGS_FILE) -> Path:
     settings_path = Path(settings_file)
     settings_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = asdict(settings)
+    root_text = str(payload.get("root_dir", ".") or ".").strip()
+    project_root = _resolve_project_path(root_text, settings_path.parent)
+    for field_name in PATH_SETTING_FIELDS:
+        value = payload.get(field_name)
+        if isinstance(value, str) and value.strip():
+            payload[field_name] = _to_project_relative_path(value.strip(), project_root)
 
     with settings_path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(asdict(settings), handle, ensure_ascii=False, indent=2)
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
 
     return settings_path
@@ -116,17 +148,18 @@ def apply_setting_overrides(settings: AppSettings, overrides: dict[str, object])
 
 
 def build_config_from_settings(settings: AppSettings) -> SqlGenerationConfig:
+    project_root = _resolve_project_path(settings.root_dir or ".", PROJECT_ROOT)
     return SqlGenerationConfig(
         oa_no=settings.oa_no,
         query_template=settings.query_template,
-        output_dir=Path(settings.output_dir),
-        sql_file=Path(settings.sql_file),
+        output_dir=_resolve_project_path(settings.output_dir, project_root),
+        sql_file=_resolve_project_path(settings.sql_file, project_root),
         sql_source_mode=normalize_sql_source_mode(settings.sql_source_mode),
         sql_text=settings.sql_text,
         content=settings.content,
         author=settings.author,
-        title_file=Path(settings.title_file),
-        template_file=Path(settings.template_file),
+        title_file=_resolve_project_path(settings.title_file, project_root),
+        template_file=_resolve_project_path(settings.template_file, project_root),
         date_range=DateRange(start_date=settings.start_date, end_date=settings.end_date),
         overwrite_mode=normalize_overwrite_mode(settings.overwrite_mode, OverwriteMode.ERROR),
         open_output_dir=settings.open_output_dir,
