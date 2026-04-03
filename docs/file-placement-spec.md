@@ -36,7 +36,7 @@
 ### 3.3 文件
 
 - 所有規格書、計畫、review 文件放 `docs/`
-- 根目錄不再放置 `*_spec.md`、`plan.md`、`code_review.md`、`todo.md`
+- 根目錄不再放置 `*.md` 文件（統一集中於 `docs/`）
 
 ## 4. 非主線檔案放置規則
 
@@ -79,18 +79,15 @@ ld-query-sql-gui/
     file-placement-spec.md
     system-spec.md
     plan.md
-    code-review.md
-    todo.md
   logs/
 ```
 
 ## 6. 立即整理清單（MVP）
 
 1. 建立 `docs/`，把根目錄文件移入：
-   - `system_spec.md -> docs/system-spec.md`
+   - `system-spec.md -> docs/system-spec.md`
    - `plan.md -> docs/plan.md`
-   - `code_review.md -> docs/code-review.md`
-   - `todo.md -> docs/todo.md`
+   - `README.md` 保留在根目錄
 2. Java 檔不保留，直接自版本控管移除。
 3. 保留根目錄只剩入口與設定。
 4. 補 `.gitignore` 排除快取與 log。
