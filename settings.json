@@ -1,0 +1,20 @@
+{
+  "oa_no": "1141202337-00",
+  "query_template": "001-ph-LDNCS2WKARDQUERY_Update",
+  "output_dir": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\output",
+  "sql_source_mode": "inline",
+  "sql_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\source.sql",
+  "sql_text": "select 1 from dual;\n",
+  "before_sql_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\source.sql",
+  "before_sql_text": "",
+  "after_sql_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\source.sql",
+  "after_sql_text": "",
+  "content": "查詢內容",
+  "author": "陳OO",
+  "title_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\input\\欄位.txt",
+  "template_file": "C:\\DevWorkspace\\codexcli\\小工具\\ld-query-sql-gui\\data\\templates\\ManagerSql.sql",
+  "start_date": "2026-04-01",
+  "end_date": "2026-04-30",
+  "overwrite_mode": "prompt",
+  "open_output_dir": false
+}
