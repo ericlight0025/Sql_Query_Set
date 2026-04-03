@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .tmp_test/
 logs/
+data/output/*.sql
+docs/assets/*.mp4
