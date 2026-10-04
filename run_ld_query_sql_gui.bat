@@ -1,41 +1,41 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
 set "SETTINGS_FILE=%SCRIPT_DIR%settings.json"
-set "PYTHON_EXE=C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe"
+set "PYTHON_EXE="
+set "PYTHON_ARGS="
 
 if exist "%SETTINGS_FILE%" (
-    call :load_python_exe_from_settings
+    for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$s = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($env:SETTINGS_FILE)); if ($s.python_exe) { $p = $s.python_exe; if (-not [IO.Path]::IsPathRooted($p)) { $r = $s.root_dir; if (-not $r) { $r = '.' }; if (-not [IO.Path]::IsPathRooted($r)) { $r = Join-Path $env:SCRIPT_DIR $r }; $p = Join-Path $r $p }; [Console]::WriteLine($p) }"`) do set "PYTHON_EXE=%%P"
 )
+if defined PYTHON_EXE goto configured
 
-if not exist "%PYTHON_EXE%" (
-    echo Python not found: %PYTHON_EXE%
-    pause
-    exit /b 1
+where py >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON_EXE=py"
+    set "PYTHON_ARGS=-3"
+    goto run
 )
+where python >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON_EXE=python"
+    goto run
+)
+echo Python 3.11 or newer is required. Install Python or set python_exe in settings.json.
+pause
+exit /b 1
 
-"%PYTHON_EXE%" "%SCRIPT_DIR%gui.py"
+:configured
+if exist "%PYTHON_EXE%" goto run
+echo Python not found: "%PYTHON_EXE%"
+pause
+exit /b 1
+
+:run
+"%PYTHON_EXE%" %PYTHON_ARGS% "%SCRIPT_DIR%gui.py"
 set "ERR=%errorlevel%"
-if not "%ERR%"=="0" (
-    echo.
-    echo GUI failed to start. Error code: %ERR%
-    pause
-)
+if "%ERR%"=="0" exit /b 0
+echo GUI failed to start. Error code: %ERR%
+pause
 exit /b %ERR%
-
-:load_python_exe_from_settings
-set "RAW="
-for /f "usebackq tokens=1,* delims=:" %%A in (`findstr /R /C:"\"python_exe\"[ ]*:" "%SETTINGS_FILE%"`) do (
-    set "RAW=%%B"
-    goto :found_python_exe
-)
-goto :eof
-
-:found_python_exe
-set "RAW=!RAW:,=!"
-set "RAW=!RAW:"=!"
-for /f "tokens=* delims= " %%P in ("!RAW!") do set "RAW=%%P"
-set "RAW=!RAW:/=\!"
-if not "!RAW!"=="" set "PYTHON_EXE=!RAW!"
-goto :eof

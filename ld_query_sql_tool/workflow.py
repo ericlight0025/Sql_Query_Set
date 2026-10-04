@@ -23,6 +23,18 @@ from .sql_validation_service import collect_validation_issues
 DirectoryOpener = Callable[[Path], None]
 
 
+def _record_execution_log(**kwargs) -> Path | None:
+    """日誌是附加資訊，寫入失敗不應改變 SQL 的產出結果。"""
+    messages = kwargs["messages"]
+    try:
+        log_file = write_execution_log(**kwargs)
+    except (OSError, UnicodeError) as exc:
+        messages.append(f"警告：操作日誌無法寫入: {exc}")
+        return None
+    messages.append(f"操作日誌: {log_file}")
+    return log_file
+
+
 def default_directory_opener(directory: Path) -> None:
     if not hasattr(os, "startfile"):
         raise RuntimeError("目前系統不支援自動開啟資料夾")
@@ -42,7 +54,7 @@ def execute_generation(
 
     if issues:
         messages.extend(f"✗ 驗證失敗: {issue.message}" for issue in issues)
-        log_file = write_execution_log(
+        log_file = _record_execution_log(
             config=config,
             messages=messages,
             success=False,
@@ -51,7 +63,6 @@ def execute_generation(
             log_dir=log_dir,
             now=now,
         )
-        messages.append(f"操作日誌: {log_file}")
         return WorkflowResult(
             success=False,
             messages=messages,
@@ -90,7 +101,7 @@ def execute_generation(
             except Exception as exc:
                 messages.append(f"無法自動開啟輸出資料夾: {exc}")
 
-        log_file = write_execution_log(
+        log_file = _record_execution_log(
             config=config,
             messages=messages,
             success=True,
@@ -99,7 +110,6 @@ def execute_generation(
             log_dir=log_dir,
             now=now,
         )
-        messages.append(f"操作日誌: {log_file}")
 
         return WorkflowResult(
             success=True,
@@ -117,7 +127,7 @@ def execute_generation(
     except Exception as exc:
         error_message = str(exc)
         messages.append(f"✗ 執行失敗: {error_message}")
-        log_file = write_execution_log(
+        log_file = _record_execution_log(
             config=config,
             messages=messages,
             success=False,
@@ -126,7 +136,6 @@ def execute_generation(
             log_dir=log_dir,
             now=now,
         )
-        messages.append(f"操作日誌: {log_file}")
         return WorkflowResult(
             success=False,
             messages=messages,
@@ -143,13 +152,29 @@ def execute_generation_bundle(
     log_dir: Path = DEFAULT_LOG_DIR,
     directory_opener: DirectoryOpener | None = None,
 ) -> WorkflowResult:
-    """GUI 專用：一次產出 Before / Update / After 三份 SQL。"""
+    """相容舊 API：依序產出 Before / Update / After，失敗時回報已產出檔案。"""
+    missing = [key for key in SQL_STAGE_KEYS if key not in stage_configs]
+    if missing:
+        error_message = f"缺少 SQL 階段設定: {', '.join(missing)}"
+        return WorkflowResult(
+            success=False, messages=[f"✗ 驗證失敗: {error_message}"],
+            log_file=None, error_message=error_message,
+        )
     update_config = stage_configs["update"]
     messages = ["開始執行 Before / Update / After 三份 SQL..."]
     output_dir_opened = False
     output_files: dict[str, Path] = {}
     stage_previews: dict[str, PreviewPayload] = {}
     issues: list[SqlValidationIssue] = []
+    output_paths = [
+        (stage_configs[key].output_dir / f"{stage_configs[key].query_template.strip()}.sql").resolve()
+        for key in SQL_STAGE_KEYS
+    ]
+    if len(set(output_paths)) != len(output_paths):
+        issues.append(SqlValidationIssue(
+            severity=ValidationSeverity.ERROR, rule_id="OUTPUT_CONFLICT",
+            message="各 SQL 階段必須使用不同輸出檔名",
+        ))
 
     for stage_key in SQL_STAGE_KEYS:
         config = stage_configs[stage_key]
@@ -165,7 +190,7 @@ def execute_generation_bundle(
 
     if issues:
         messages.extend(f"✗ 驗證失敗: {issue.message}" for issue in issues)
-        log_file = write_execution_log(
+        log_file = _record_execution_log(
             config=update_config,
             messages=messages,
             success=False,
@@ -174,7 +199,6 @@ def execute_generation_bundle(
             log_dir=log_dir,
             now=now,
         )
-        messages.append(f"操作日誌: {log_file}")
         return WorkflowResult(
             success=False,
             messages=messages,
@@ -207,7 +231,7 @@ def execute_generation_bundle(
                 messages.append(f"無法自動開啟輸出資料夾: {exc}")
 
         messages.append("✓ 三份 SQL 皆產出成功")
-        log_file = write_execution_log(
+        log_file = _record_execution_log(
             config=update_config,
             messages=messages,
             success=True,
@@ -216,7 +240,6 @@ def execute_generation_bundle(
             log_dir=log_dir,
             now=now,
         )
-        messages.append(f"操作日誌: {log_file}")
         return WorkflowResult(
             success=True,
             messages=messages,
@@ -231,7 +254,7 @@ def execute_generation_bundle(
     except Exception as exc:
         error_message = str(exc)
         messages.append(f"✗ 執行失敗: {error_message}")
-        log_file = write_execution_log(
+        log_file = _record_execution_log(
             config=update_config,
             messages=messages,
             success=False,
@@ -240,7 +263,6 @@ def execute_generation_bundle(
             log_dir=log_dir,
             now=now,
         )
-        messages.append(f"操作日誌: {log_file}")
         return WorkflowResult(
             success=False,
             messages=messages,

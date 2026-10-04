@@ -103,8 +103,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         loaded_settings = load_settings(settings_file)
         merged_settings = build_merged_settings(args, loaded_settings)
-        if args.save_settings:
-            save_settings(merged_settings, settings_file)
         runtime_settings = build_runtime_settings(args, loaded_settings)
         config = build_config_from_settings(runtime_settings)
     except Exception as exc:
@@ -114,4 +112,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     for message in result.messages:
         print(message)
 
+    if result.success and args.save_settings:
+        try:
+            save_settings(merged_settings, settings_file)
+        except (OSError, UnicodeError) as exc:
+            print(f"SQL 已產生，但設定儲存失敗: {exc}")
+            return 1
+
     return 0 if result.success else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

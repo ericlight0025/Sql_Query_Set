@@ -101,7 +101,7 @@ class SqlGenerationResult:
 class WorkflowResult:
     success: bool
     messages: list[str]
-    log_file: Path
+    log_file: Path | None
     issues: list[SqlValidationIssue] = field(default_factory=list)
     preview: PreviewPayload | None = None
     output_file: Path | None = None
@@ -138,4 +138,3 @@ class AppSettings:
     root_dir: str = "."
     python_exe: str = ""
     ui_font_size: str = "11"
-

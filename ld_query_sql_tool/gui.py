@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import os
+import queue
 import subprocess
 import threading
 import tkinter as tk
@@ -15,6 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 from ld_query_sql_tool.config_service import build_config_from_settings, load_settings, save_settings
 from ld_query_sql_tool.models import (
     AppSettings,
+    DateRange,
     DEFAULT_INPUT_DIR,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_SETTINGS_FILE,
@@ -24,8 +26,10 @@ from ld_query_sql_tool.models import (
     SqlSourceMode,
     WorkflowResult,
 )
-from ld_query_sql_tool.sql_render_service import read_text_preserve_newlines
+from ld_query_sql_tool.sql_render_service import read_text_preserve_newlines, replace_date_tokens
 from ld_query_sql_tool.sql_service import build_output_file_path
+from ld_query_sql_tool.sql_validation_service import validate_date_range
+from ld_query_sql_tool.file_service import write_text_atomic
 from ld_query_sql_tool.syntax_highlighter import apply_sql_syntax_highlighting
 from ld_query_sql_tool.workflow import execute_generation
 
@@ -126,6 +130,7 @@ class SqlToolApp:
         self.root.geometry("1200x900")
         self.root.minsize(1000, 800)
         self.is_running = False
+        self.result_queue = queue.SimpleQueue()
 
         self.loaded_settings_error = ""
         settings = self._load_initial_settings()
@@ -453,14 +458,15 @@ class SqlToolApp:
         if initial_text:
             self._set_text_content(self.raw_sql_text, initial_text, editable=True)
         else:
-            p = Path(settings.sql_file)
+            p = self._resolve_with_root(settings.sql_file, settings.root_dir)
             if p.is_file():
                 self._load_sql_file_into_editor(p, switch_mode=False)
 
     def _load_sql_file_into_editor_from_button(self):
-        p = self.sql_file_var.get().strip()
-        if p and Path(p).is_file():
-            self._load_sql_file_into_editor(Path(p), switch_mode=True)
+        path_text = self.sql_file_var.get().strip()
+        p = self._resolve_with_root(path_text, self.root_dir_var.get())
+        if path_text and p.is_file():
+            self._load_sql_file_into_editor(p, switch_mode=True)
             self.main_notebook.select(1)
         else:
             messagebox.showerror("錯誤", "SQL 檔案路徑無效。")
@@ -492,7 +498,9 @@ class SqlToolApp:
             self.main_notebook.select(1)
             self._set_running(True)
             threading.Thread(target=self._run_bg, args=(resolved, st), daemon=True).start()
+            self.root.after(50, self._poll_result)
         except Exception as e:
+            self._set_running(False)
             messagebox.showerror("錯誤", f"輸入參數異常:\n{e}")
 
     def _validate_required_fields(self, st: AppSettings) -> list[str]:
@@ -531,9 +539,6 @@ class SqlToolApp:
             self._apply_ui_font_size()
             st = self._build_settings_from_ui()
             save_settings(st, self.settings_file)
-            # 系統設定另外同步到專案根目錄 settings.json
-            if Path(self.settings_file).resolve() != DEFAULT_SETTINGS_FILE.resolve():
-                save_settings(st, DEFAULT_SETTINGS_FILE)
             messagebox.showinfo("成功", "系統設定已儲存。")
         except Exception as e:
             messagebox.showerror("錯誤", f"儲存設定失敗:\n{e}")
@@ -661,6 +666,11 @@ class SqlToolApp:
         if not start or not end:
             messagebox.showwarning("提醒", "請先設定開始日期與結束日期。")
             return
+        try:
+            validate_date_range(start, end)
+        except ValueError as exc:
+            messagebox.showwarning("提醒", f"日期設定無效: {exc}")
+            return
         raw = self._get_text_content(self.raw_sql_text)
         replaced, start_hits, end_hits = self._replace_date_tokens(raw)
         if replaced == raw:
@@ -676,20 +686,9 @@ class SqlToolApp:
         return replaced
 
     def _replace_date_tokens(self, raw: str) -> tuple[str, int, int]:
-        start = self.start_date_var.get().strip()
-        end = self.end_date_var.get().strip()
-        replaced = raw
-        start_hits = 0
-        end_hits = 0
-        if start:
-            for token in ("?startDate?", "startDate", ":startDate", "${startDate}"):
-                start_hits += replaced.count(token)
-                replaced = replaced.replace(token, start)
-        if end:
-            for token in ("?endDate?", "endDate", ":endDate", "${endDate}"):
-                end_hits += replaced.count(token)
-                replaced = replaced.replace(token, end)
-        return replaced, start_hits, end_hits
+        return replace_date_tokens(raw, DateRange(
+            self.start_date_var.get().strip(), self.end_date_var.get().strip(),
+        ))
 
     def _refresh_date_tab_sql(self) -> None:
         if not hasattr(self, "date_sql_text") or not hasattr(self, "raw_sql_text"):
@@ -713,8 +712,24 @@ class SqlToolApp:
         return replace(config, overwrite_mode=OverwriteMode.OVERWRITE if ans else OverwriteMode.RENAME)
 
     def _run_bg(self, config, st: AppSettings):
-        res = execute_generation(config)
-        self.root.after(0, lambda: self._on_result(res, st))
+        try:
+            res = execute_generation(config)
+        except Exception as exc:
+            res = WorkflowResult(
+                success=False, messages=[f"✗ 執行失敗: {exc}"],
+                log_file=None, error_message=str(exc),
+            )
+        # 背景執行緒僅傳送資料，Tk 操作一律由主執行緒處理。
+        self.result_queue.put((res, st))
+
+    def _poll_result(self):
+        try:
+            res, st = self.result_queue.get_nowait()
+        except queue.Empty:
+            if self.is_running:
+                self.root.after(50, self._poll_result)
+            return
+        self._on_result(res, st)
 
     def _on_result(self, res: WorkflowResult, st: AppSettings):
         for m in res.messages: self._append_log(m)
@@ -723,7 +738,11 @@ class SqlToolApp:
             self._set_text_content(self.rendered_sql_text, res.preview.rendered_sql, editable=False)
         self._set_running(False)
         if res.success:
-            save_settings(st, self.settings_file)
+            try:
+                save_settings(st, self.settings_file)
+                self.base_settings = st
+            except (OSError, UnicodeError) as exc:
+                self._append_log(f"警告：SQL 已產生，但設定儲存失敗: {exc}")
             messagebox.showinfo("成功", f"模組產生完成！\n{res.output_file}")
             self.preview_notebook.select(1)
         else:
@@ -785,7 +804,11 @@ class SqlToolApp:
         )
         if not target:
             return
-        Path(target).write_text(text, encoding="utf-8", newline="\n")
+        try:
+            write_text_atomic(Path(target), text)
+        except (OSError, UnicodeError) as exc:
+            messagebox.showerror("錯誤", f"無法儲存 SQL: {exc}")
+            return
         self._append_log(f"{tab_name} 已另存: {target}")
 
     def _clear_log(self):

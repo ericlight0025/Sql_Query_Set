@@ -51,7 +51,7 @@ def validate_query_template_filename(query_template: str) -> str:
     trimmed = query_template.strip()
     if not trimmed:
         raise ValueError("Query 範本不能為空")
-    if any(char in INVALID_FILENAME_CHARS for char in trimmed):
+    if any(char in INVALID_FILENAME_CHARS or ord(char) < 32 for char in trimmed):
         raise ValueError(f"Query 範本包含 Windows 非法字元: {trimmed}")
     if trimmed.endswith((" ", ".")):
         raise ValueError("Query 範本不能以空白或句點結尾")
@@ -71,7 +71,7 @@ def validate_template_placeholders(template_content: str) -> None:
 
 
 def validate_date_range(start_date: str, end_date: str) -> None:
-    """目前先支援空值，等 GUI 日期欄位補齊後再改為必填。"""
+    """日期可同時留空；提供時須使用 YYYY-MM-DD 並維持開始不晚於結束。"""
     if not start_date and not end_date:
         return
     if not start_date or not end_date:
@@ -141,6 +141,8 @@ def collect_validation_issues(config: SqlGenerationConfig) -> list[SqlValidation
         try:
             template_content = read_text_preserve_newlines(config.template_file)
             validate_template_placeholders(template_content)
+        except (OSError, UnicodeError) as exc:
+            issues.append(_issue("TEMPLATE_READ_FAILED", f"無法讀取範本: {exc}"))
         except ValueError as exc:
             issues.append(_issue("TEMPLATE_TOKEN_MISSING", str(exc)))
 
