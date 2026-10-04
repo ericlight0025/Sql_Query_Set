@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .models import SqlGenerationConfig, SqlGenerationResult
+from .file_service import write_text_atomic
+from .models import SqlGenerationConfig, SqlGenerationResult, SqlSourceMode
 from .sql_render_service import (
     build_output_file_path,
     build_renamed_output_file,
@@ -32,16 +33,20 @@ def generate_sql_file(
 ) -> SqlGenerationResult:
     """相容層：保留既有 API，但內部改走 validation/render 的分層實作。"""
     validate_generation_config(config)
+    timestamp = now or datetime.now()
 
-    raw_sql, resolved_sql, rendered_sql, title = build_rendered_sql(config, now=now)
+    raw_sql, resolved_sql, rendered_sql, title = build_rendered_sql(config, now=timestamp)
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = resolve_output_file_conflict(build_output_file_path(config), str(config.overwrite_mode))
+    protected_paths = (config.title_file, config.template_file)
+    if str(config.sql_source_mode) == SqlSourceMode.FILE.value:
+        protected_paths += (config.sql_file,)
+    output_file = write_text_atomic(
+        build_output_file_path(config), rendered_sql,
+        overwrite_mode=str(config.overwrite_mode), protected_paths=protected_paths,
+    )
 
-    with output_file.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(rendered_sql)
-
-    sysdate = (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S.000000")
+    sysdate = timestamp.strftime("%Y-%m-%d %H:%M:%S.000000")
     return SqlGenerationResult(
         output_file=output_file,
         raw_sql=raw_sql,

@@ -25,11 +25,15 @@
 
 ## 快速開始
 
+使用 Python 3.11 以上，GUI 需要 Python 的 Tkinter。核心產生流程與測試只使用標準函式庫。
+
 ### 1) GUI（Windows）
 
 ```bat
 run_ld_query_sql_gui.bat
 ```
+
+啟動檔優先使用 `settings.json` 的 `python_exe`；未指定時依序使用 `py -3`、`python`，不再依賴個人電腦的固定路徑。
 
 或
 
@@ -67,11 +71,26 @@ python -m ld_query_sql_tool.cli ^
 - `sql_source_mode`: `file` 或 `inline`
 - `overwrite_mode`: `prompt` / `overwrite` / `rename` / `error`
 
+相對的 `root_dir` 一律以專案根目錄為基準，與目前工作目錄及設定檔位置無關。指定自訂設定檔只會儲存該檔，不會同步覆蓋預設 `settings.json`。CLI 的 `--save-settings` 僅在 SQL 產生成功後回存。
+
 ## 日期替換說明
 
 - 第一頁輸入的日期是「測試替換」用途
 - `日期替換` 分頁會將 SQL 內的 `startDate` / `endDate`（含 `?startDate?` 類型）替換後顯示
 - PRD 腳本可保留 placeholder，不會強制寫死日期
+
+支援 `${startDate}`、`:startDate`、`?startDate?`、獨立的 `startDate`，結束日期同理。`startDateColumn` 等較長識別字不會被修改。兩個日期可同時留空；提供時須為有效的 `YYYY-MM-DD`，且開始日期不可晚於結束日期。
+
+## SQL 輸出與檔案安全
+
+- CLOB 維持每 10 行分段，長行會再依跳脫後 UTF-8 內容切成最多 4,000 位元組的字串，保留原始換行與 Unicode 字元。
+- 範本占位符只替換一次；來源 SQL 或描述中同名的 `${author}` 等文字會保留。
+- SQL 與設定檔先完整寫入同目錄暫存檔，再發布；寫入或覆寫失敗會保留既有檔案。
+- `error` 與 `rename` 使用原子硬連結發布，並行執行不會搶占同名檔案。需使用支援硬連結的檔案系統，例如 NTFS；不支援時會明確失敗，可改用支援的本機磁碟。
+- SQL 產生流程禁止覆蓋來源 SQL、欄位檔或範本，包含其硬連結。
+- 日誌寫入失敗會顯示警告，SQL 產生結果仍會正確回報。GUI 設定回存失敗也會顯示警告；CLI 指定回存失敗時會回傳結束碼 `1` 並告知 SQL 已產生。
+
+Oracle 位元組限制參考：[Oracle Database 19c — Literals](https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/Literals.html)。分段以 UTF-8 / AL32UTF8 為基準；其他資料庫字元集須另行確認。
 
 ## 專案結構
 
@@ -94,14 +113,16 @@ python -m ld_query_sql_tool.cli ^
 語法檢查：
 
 ```bash
-python -m py_compile ld_query_sql_tool/gui.py
+python -m compileall -q ld_query_sql_tool gui.py tests
 ```
 
-單元測試（若已配置）：
+單元測試（包含不需顯示器的 GUI 流程測試）：
 
 ```bash
-python -m unittest
+python -m unittest discover -s tests -v
 ```
+
+本次 code review、修正範圍及實測限制見 [docs/code-review-20261004.md](docs/code-review-20261004.md)。Windows 啟動檔與實際 Tk 視窗仍需在 Windows 上人工驗收，Oracle 執行也需在目標資料庫驗證。
 
 ## 畫面錄製（Windows）
 

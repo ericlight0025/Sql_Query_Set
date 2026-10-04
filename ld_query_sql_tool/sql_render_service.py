@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import re
 
 from .models import DateRange, SQL_STAGE_KEYS, SQL_STAGE_SUFFIXES, SqlGenerationConfig, SqlSourceMode, PreviewPayload
 
@@ -48,8 +49,29 @@ def build_preview_payload(
     )
 
 
+DATE_TOKEN_PATTERN = re.compile(
+    r"\$\{(?:startDate|endDate)\}|\?(?:startDate|endDate)\?|"
+    r":(?:startDate|endDate)\b|(?<![\w:$?{])(?:startDate|endDate)(?![\w}?])"
+)
+
+
+def replace_date_tokens(text: str, date_range: DateRange) -> tuple[str, int, int]:
+    hits = {"startDate": 0, "endDate": 0}
+    values = {"startDate": date_range.start_date, "endDate": date_range.end_date}
+
+    def replace_token(match: re.Match[str]) -> str:
+        name = "startDate" if "startDate" in match.group() else "endDate"
+        if not values[name]:
+            return match.group()
+        hits[name] += 1
+        return values[name]
+
+    replaced = DATE_TOKEN_PATTERN.sub(replace_token, text)
+    return replaced, hits["startDate"], hits["endDate"]
+
+
 def resolve_date_tokens(text: str, date_range: DateRange) -> str:
-    return text.replace("${startDate}", date_range.start_date).replace("${endDate}", date_range.end_date)
+    return replace_date_tokens(text, date_range)[0]
 
 
 def escape_sql_literal(text: str | None) -> str:
@@ -72,7 +94,20 @@ def build_sql_clob_expression(sql_text: str) -> str:
 
     for start in range(0, len(lines), 10):
         block = "".join(lines[start : start + 10])
-        blocks.append(f"to_clob('{escape_sql_literal(block)}')")
+        literal: list[str] = []
+        byte_count = 0
+        for character in block:
+            escaped = escape_sql_literal(character)
+            size = len(escaped.encode("utf-8"))
+            # 以跳脫後 UTF-8 位元組保守計算，保留中文字元與原始換行。
+            if byte_count + size > 4000:
+                blocks.append(f"to_clob('{''.join(literal)}')")
+                literal = []
+                byte_count = 0
+            literal.append(escaped)
+            byte_count += size
+        if literal:
+            blocks.append(f"to_clob('{''.join(literal)}')")
 
     return " || ".join(blocks)
 
@@ -87,15 +122,18 @@ def fill_manager_sql_template(
     title: str,
     sysdate: str,
 ) -> str:
-    return (
-        template_content.replace("${querytemplate}", escape_sql_literal(query_template))
-        .replace("${oaNo}", escape_sql_literal(oa_no))
-        .replace("'${sqlScript}'", sql_clob_expression)
-        .replace("${content}", escape_sql_literal(content))
-        .replace("${author}", escape_sql_literal(author))
-        .replace("${title}", escape_sql_literal(title))
-        .replace("${sysdate}", sysdate)
-    )
+    replacements = {
+        "${querytemplate}": escape_sql_literal(query_template),
+        "${oaNo}": escape_sql_literal(oa_no),
+        "'${sqlScript}'": sql_clob_expression,
+        "${content}": escape_sql_literal(content),
+        "${author}": escape_sql_literal(author),
+        "${title}": escape_sql_literal(title),
+        "${sysdate}": sysdate,
+    }
+    # 僅掃描原始模板一次，插入的 SQL 或欄位內容不再參與占位符替換。
+    pattern = re.compile("|".join(re.escape(token) for token in replacements))
+    return pattern.sub(lambda match: replacements[match.group()], template_content)
 
 
 def normalize_query_template_base(query_template: str) -> str:

@@ -4,12 +4,12 @@ import argparse
 import tempfile
 import unittest
 from datetime import datetime
+from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch
 
 from ld_query_sql_tool.cli import build_merged_settings, build_runtime_settings
-from ld_query_sql_tool.config_service import build_config_from_settings, load_settings, save_settings
-from ld_query_sql_tool.gui import APP_BG, SQL_PREVIEW_THEMES, SqlToolApp
+from ld_query_sql_tool.config_service import PATH_SETTING_FIELDS, build_config_from_settings, load_settings, save_settings
 from ld_query_sql_tool.models import (
     AppSettings,
     DEFAULT_OUTPUT_DIR,
@@ -69,7 +69,10 @@ class TestLdQuerySqlWorkflow(unittest.TestCase):
             save_settings(original, settings_file)
             loaded = load_settings(settings_file)
 
-            self.assertEqual(loaded, original)
+            self.assertEqual(build_config_from_settings(loaded), build_config_from_settings(original))
+            for name, value in asdict(original).items():
+                if name not in PATH_SETTING_FIELDS:
+                    self.assertEqual(getattr(loaded, name), value)
 
     def test_build_runtime_settings_prefers_cli_overrides(self) -> None:
         loaded_settings = AppSettings(
@@ -242,7 +245,7 @@ class TestLdQuerySqlWorkflow(unittest.TestCase):
             self.assertIn("2026-04-01", preview.resolved_sql)
             self.assertIn("2026-04-30", preview.resolved_sql)
             self.assertIn(
-                "to_clob('select ''2026-04-01'' as start_date, ''2026-04-30'' as end_date from dual;\n')",
+                "to_clob('select ''${startDate}'' as start_date, ''${endDate}'' as end_date from dual;\n')",
                 preview.rendered_sql,
             )
 
@@ -262,136 +265,6 @@ class TestLdQuerySqlWorkflow(unittest.TestCase):
         self.assertEqual(preview.resolved_sql, "resolved")
         self.assertEqual(preview.rendered_sql, "rendered")
 
-    def test_set_preview_content_updates_preview_tabs(self) -> None:
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            app = SqlToolApp(root)
-            preview = PreviewPayload(
-                raw_sql="select * from raw_table;",
-                resolved_sql="select * from resolved_table;",
-                rendered_sql="insert into manager_sql values ('wrapped');",
-            )
-
-            app._set_preview_content(preview)
-
-            raw_text = app.raw_sql_text.get("1.0", "end-1c")
-            rendered_text = app.rendered_sql_text.get("1.0", "end-1c")
-            self.assertEqual(raw_text, preview.raw_sql)
-            self.assertEqual(rendered_text, preview.rendered_sql)
-        finally:
-            root.destroy()
-
-    def test_build_settings_from_form_uses_inline_sql_when_screen_edit_mode_is_selected(self) -> None:
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            app = SqlToolApp(root)
-            app.sql_source_var.set("畫面編輯")
-            app._set_text_widget_content(app.raw_sql_text, "select * from edited_sql;", editable=True)
-
-            settings = app._build_settings_from_form()
-
-            self.assertEqual(str(settings.sql_source_mode), SqlSourceMode.INLINE.value)
-            self.assertEqual(settings.sql_text, "select * from edited_sql;")
-        finally:
-            root.destroy()
-
-    def test_apply_sql_theme_only_updates_sql_widgets(self) -> None:
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            app = SqlToolApp(root)
-            app._open_preview_window("原始 SQL", "select 1 from dual;")
-            preview_window, preview_text = app.preview_windows[-1]
-            app._apply_sql_theme("夜幕")
-
-            self.assertEqual(app.raw_sql_text.cget("bg"), "#0F1B24")
-            self.assertEqual(app.rendered_sql_text.cget("fg"), "#E7F2F8")
-            self.assertEqual(preview_text.cget("bg"), SQL_PREVIEW_THEMES["夜幕"]["background"])
-            self.assertEqual(root.cget("bg"), APP_BG)
-            self.assertEqual(preview_window.cget("bg"), APP_BG)
-        finally:
-            root.destroy()
-
-    def test_execute_process_does_not_save_settings_when_validation_fails(self) -> None:
-        app = object.__new__(SqlToolApp)
-        app.is_running = False
-        app.settings_file = Path("C:/temp/settings.json")
-        app._clear_log = lambda: None
-        app._build_settings_from_form = lambda: AppSettings()
-        app._append_log = lambda _message: None
-
-        with (
-            patch("ld_query_sql_tool.gui.build_config_from_settings", side_effect=ValueError("bad input")),
-            patch("ld_query_sql_tool.gui.save_settings") as save_settings_mock,
-            patch("ld_query_sql_tool.gui.messagebox.showerror") as showerror_mock,
-        ):
-            SqlToolApp._execute_process(app)
-
-        save_settings_mock.assert_not_called()
-        showerror_mock.assert_called_once_with("執行失敗", "bad input")
-
-    def test_handle_result_saves_settings_only_on_success(self) -> None:
-        app = object.__new__(SqlToolApp)
-        app.settings_file = Path("C:/temp/settings.json")
-        app.base_settings = AppSettings(oa_no="OLD")
-        app._append_log = lambda _message: None
-        app._set_running = lambda _running: None
-
-        result = WorkflowResult(
-            success=True,
-            messages=["✓ 執行成功"],
-            log_file=Path("C:/temp/log.txt"),
-            output_file=Path("C:/temp/output.sql"),
-        )
-        successful_settings = AppSettings(oa_no="NEW")
-
-        with (
-            patch("ld_query_sql_tool.gui.save_settings") as save_settings_mock,
-            patch("ld_query_sql_tool.gui.messagebox.showinfo") as showinfo_mock,
-            patch("ld_query_sql_tool.gui.messagebox.showerror") as showerror_mock,
-        ):
-            SqlToolApp._handle_result(app, result, successful_settings)
-
-        save_settings_mock.assert_called_once_with(successful_settings, app.settings_file)
-        self.assertEqual(app.base_settings, successful_settings)
-        showinfo_mock.assert_called_once_with("完成", "已輸出檔案:\nC:\\temp\\output.sql")
-        showerror_mock.assert_not_called()
-
-    def test_handle_result_does_not_save_settings_on_failure(self) -> None:
-        app = object.__new__(SqlToolApp)
-        app.settings_file = Path("C:/temp/settings.json")
-        app.base_settings = AppSettings(oa_no="OLD")
-        app._append_log = lambda _message: None
-        app._set_running = lambda _running: None
-
-        result = WorkflowResult(
-            success=False,
-            messages=["✗ 執行失敗: boom"],
-            log_file=Path("C:/temp/log.txt"),
-            error_message="boom",
-        )
-
-        with (
-            patch("ld_query_sql_tool.gui.save_settings") as save_settings_mock,
-            patch("ld_query_sql_tool.gui.messagebox.showinfo") as showinfo_mock,
-            patch("ld_query_sql_tool.gui.messagebox.showerror") as showerror_mock,
-        ):
-            SqlToolApp._handle_result(app, result, AppSettings(oa_no="NEW"))
-
-        save_settings_mock.assert_not_called()
-        self.assertEqual(app.base_settings.oa_no, "OLD")
-        showinfo_mock.assert_not_called()
-        showerror_mock.assert_called_once_with("執行失敗", "boom")
-
 
 if __name__ == "__main__":
     unittest.main()
-

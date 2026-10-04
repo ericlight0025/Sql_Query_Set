@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
+from .file_service import write_text_atomic
 
 from .models import (
     AppSettings,
@@ -114,15 +115,13 @@ def save_settings(settings: AppSettings, settings_file: Path = DEFAULT_SETTINGS_
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     payload = asdict(settings)
     root_text = str(payload.get("root_dir", ".") or ".").strip()
-    project_root = _resolve_project_path(root_text, settings_path.parent)
+    project_root = _resolve_project_path(root_text, PROJECT_ROOT)
     for field_name in PATH_SETTING_FIELDS:
         value = payload.get(field_name)
         if isinstance(value, str) and value.strip():
             payload[field_name] = _to_project_relative_path(value.strip(), project_root)
 
-    with settings_path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
+    write_text_atomic(settings_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
     return settings_path
 
